@@ -23,6 +23,7 @@ var (
 	cacheBind   = flag.String("cache_bind", ":5001", "Bind address of the groupcache server")
 	cachePublic = flag.String("cache_public", "", "Public address of the groupcache server")
 	cachePeers  = flag.String("cache_peers", "", "List of peers in the groupcache cluster")
+	cacheSize   = flag.Int64("cache_size", 64<<20, "Size of the LRU cache")
 )
 
 var (
@@ -30,6 +31,9 @@ var (
 )
 
 func main() {
+	// Parse the flags
+	flag.Parse()
+
 	// Create a new groupcache pool
 	pool := groupcache.NewHTTPPool(*cachePublic)
 	pool.Set(strings.Split(*cachePeers, ",")...)
@@ -49,7 +53,7 @@ func main() {
 	}()
 
 	// Create a new groupcache pool
-	cache := groupcache.NewGroup("ritratt", 64<<20, groupcache.GetterFunc(func(ctx groupcache.Context, url string, dest groupcache.Sink) error {
+	cache := groupcache.NewGroup("ritratt", *cacheSize, groupcache.GetterFunc(func(ctx groupcache.Context, url string, dest groupcache.Sink) error {
 		// First try with https
 		schema := "https://"
 		resp, err := http.Head("https://" + url)
