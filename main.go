@@ -2,9 +2,11 @@ package main
 
 import (
 	"errors"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/golang/groupcache"
@@ -28,6 +30,7 @@ var (
 
 var (
 	ErrInvalidContentType = errors.New("Invalid Content-Type")
+	ErrTooBig             = errors.New("File is too big")
 )
 
 func main() {
@@ -71,11 +74,11 @@ func main() {
 		// Content-Type of the result has to start with image/
 		// We also don't support SVGs, check out this link for more information:
 		// https://www.owasp.org/images/0/03/Mario_Heiderich_OWASP_Sweden_The_image_that_called_me.pdf
-		ct := resp.Header.Get("Content-Type")
+		/*ct := resp.Header.Get("Content-Type")
 		if !strings.HasPrefix(ct, "image/") || strings.Contains(ct, "image/svg+xml") {
 			log.Printf("[head] Invalid Content-Type of %s", url)
 			return ErrInvalidContentType
-		}
+		}*/
 
 		// Query the proper URL, now including the body
 		resp, err = http.Get(schema + url)
@@ -87,16 +90,54 @@ func main() {
 		}
 
 		// Content-Type check #2
-		ct = resp.Header.Get("Content-Type")
+		ct := resp.Header.Get("Content-Type")
 		if !strings.HasPrefix(ct, "image/") || strings.Contains(ct, "image/svg+xml") {
 			log.Printf("[get] Invalid Content-Type of %s", url)
 			return ErrInvalidContentType
 		}
 
-		// Read the body
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return err
+		var body []byte
+
+		// Read the dlenght
+		cls := resp.Header.Get("Content-Length")
+		if cls != "" {
+			cl, err := strconv.Atoi(cls)
+			if err != nil {
+				log.Print(err)
+			} else {
+				if cl > 25*1024*1024 {
+					return ErrTooBig
+				} else {
+					body, err = ioutil.ReadAll(resp.Body)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		} else {
+			body = []byte{}
+			totalRead := 0
+
+			for {
+				chunk := make([]byte, 1024*1024)
+
+				read, err := resp.Body.Read(chunk)
+				totalRead += read
+
+				if err == io.EOF {
+					break
+				}
+
+				if err != nil {
+					return err
+				}
+
+				body = append(body, chunk[:read]...)
+
+				if totalRead > 25*1024*1024 {
+					return ErrTooBig
+				}
+			}
 		}
 
 		// Put the body into cache with the Content-Type
